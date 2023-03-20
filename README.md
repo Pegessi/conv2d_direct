@@ -10,4 +10,4 @@
 
 `nvcc main.cu -o test -lcudnn`
 
-如果找不到cudnn请手动指定目录"# conv2d_direct" 
+如果找不到cudnn请手动指定目录
