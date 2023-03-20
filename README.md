@@ -2,7 +2,7 @@
 
 直接计算conv2d的cuda算子实现
 
-详细介绍参考：
+详细介绍参考：https://zhuanlan.zhihu.com/p/613538649
 
 ## 编译
 
