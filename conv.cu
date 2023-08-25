@@ -344,20 +344,6 @@ __global__ void v1_convolution(element_type *in, element_type *out, element_type
     }
 }
 
-template <
-    const int BLOCK_HEIGHT,
-    const int BLOCK_WIDTH,
-    const int KERNEL_HEIGHT,
-    const int KERNEL_WIDTH>
-__global__ void v1_convolution(element_type *in, element_type *out, element_type *kernel, int batch_size,
-                               int inC, int inH, int inW,
-                               int outC, int outH, int outW,
-                               int kernelH, int kernelW)
-{
-    int block_row = blockIdx.y;
-    int block_col = blockIdx.x;
-    int thread_row = threadIdx.y, thread_col = threadIdx.x;
-}
 
 template <
     const int BLOCK_SIZE_ROW,

@@ -11,3 +11,9 @@
 `nvcc main.cu -o test -lcudnn`
 
 如果找不到cudnn请手动指定目录
+
+## 测试
+
+报告生成：`nsys profile --stats=true -o report_conv ./test `
+
+ncu生成：`sudo LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/path/to/cuda-11.7/lib64  /path/to/cuda-11.7/bin/ncu test`

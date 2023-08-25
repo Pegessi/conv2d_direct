@@ -24,12 +24,12 @@ int main()
 {
     // 初始化CPU数据 32 16 30 14
     const int N = 1;    // batch size
-    const int inC = 6; // inChannel >15会出错？
-    const int inH = 768;
-    const int inW = 512;
+    const int inC = 3; // inChannel >15会出错？
+    const int inH = 1920;
+    const int inW = 2400;
+    const int outC = 3; // outChannel 每个都与不同的卷积核运算 之后再分别放到outChannel中
     const int kernelH = 6;
     const int kernelW = 6;
-    const int outC = 6; // outChannel 每个都与不同的卷积核运算 之后再分别放到outChannel中
     const int outH = inH - kernelH + 1;
     const int outW = inW - kernelW + 1;
 
@@ -61,7 +61,7 @@ int main()
     cudaEvent_t start, stop;
     cudaEventCreate(&start);
     cudaEventCreate(&stop);
-    int iters = 100;
+    int iters = 100, warmup = 10;
     float msecTotal = 0;
     double msecPerMatrixMul[2] = {0, 0}, gigaFlops[2] = {0, 0};
     double flopsPerMatrixMul = out_size * inC * kernelH * kernelW;
@@ -94,10 +94,11 @@ int main()
                                     CUDNN_CONVOLUTION, CUDNN_DATA_FLOAT);
     // 运算空间
     size_t space_size = 0;
+    cudnnConvolutionFwdAlgo_t alg_kind = CUDNN_CONVOLUTION_FWD_ALGO_IMPLICIT_GEMM;
     cudnnStatus_t Error =
         cudnnGetConvolutionForwardWorkspaceSize(handle, input_desc,
                                                 kernel_desc, conv_desc, output_desc,
-                                                CUDNN_CONVOLUTION_FWD_ALGO_IMPLICIT_GEMM,
+                                                alg_kind,
                                                 &space_size);
 
     if (Error != CUDNN_STATUS_SUCCESS)
@@ -133,30 +134,29 @@ int main()
     //     errorHandler(err, __FILE__, __LINE__);
     // }
     // cudaEventRecord(start);
-    for (int run = 0; run < iters; run++)
+    for (int run = 0; run < iters + warmup; run++)
     {
+        if (run == warmup)
+            cudaEventRecord(start);
         Error = cudnnConvolutionForward(handle,
                                         &alpha, input_desc,
                                         dev_input,
                                         kernel_desc, dev_kernel,
                                         conv_desc,
-                                        CUDNN_CONVOLUTION_FWD_ALGO_IMPLICIT_GEMM,
+                                        alg_kind,
                                         workspace,
                                         space_size,
                                         &beta,
                                         output_desc,
                                         dev_output);
-        if (run == 1)
-            cudaEventRecord(start);
     }
     cudaEventRecord(stop);
-
-    cudaMemcpy(outputs, dev_output, output_size, cudaMemcpyDeviceToHost);
-
     cudaEventSynchronize(stop);
     cudaEventElapsedTime(&msecTotal, start, stop);
-    printf("cudnn cost time: %f\n", msecTotal / (iters - 1));
-    msecPerMatrixMul[0] = msecTotal / (iters - 1);
+
+    cudaMemcpy(outputs, dev_output, output_size, cudaMemcpyDeviceToHost);
+    printf("cudnn cost time: %f\n", msecTotal / (iters));
+    msecPerMatrixMul[0] = msecTotal / (iters);
     gigaFlops[0] = (flopsPerMatrixMul * 1.0e-9f) / (msecPerMatrixMul[0] / 1000.0f);
 
     if (Error != CUDNN_STATUS_SUCCESS)
@@ -182,10 +182,10 @@ int main()
         self_outputs[i] = 0;
     }
     serial_convolution(inputs, self_outputs, kernel, N, inC, inH, inW, outC, outH, outW, kernelH, kernelW);
-    // for (int i = 0; i < outH * outW; i++)
-    // {
-    //     printf("%.2f|%.2f\n", outputs[i], self_outputs[i]);
-    // }
+    for (int i = 0; i < outH * outW; i++)
+    {
+        printf("%.2f|%.2f\n", outputs[i], self_outputs[i]);
+    }
     /* ---- CPU serial END ---- */
 #endif
 
@@ -219,24 +219,24 @@ int main()
 
     // cudaEventRecord(start);
 
-    for (int run = 0; run < iters; run++)
+    for (int run = 0; run < iters + warmup; run++)
     {
+        if (run == warmup)
+            cudaEventRecord(start);
         v1_convolution<BLOCK_HEIGHT, BLOCK_WIDTH, KERNEL_HEIGHT, KERNEL_WIDTH, MALLOC_TEMP_SIZE,
                        MALLOC_KERNEL_HEIGHT, MALLOC_KERNEL_WIDTH, MALLOC_BLOCK_HEIGHT, MALLOC_BLOCK_WIDTH>
             <<<dimGrid, dimBlock>>>(self_dev_input, self_dev_output, self_dev_kernel,
                                     N, inC, inH, inW, outC, outH, outW, kernelH, kernelW);
-        if (run == 1)
-            cudaEventRecord(start);
     }
 
     cudaEventRecord(stop);
+    cudaEventSynchronize(stop);
+    cudaEventElapsedTime(&msecTotal, start, stop);
 
     cudaMemcpy(self_outputs, self_dev_output, output_size, cudaMemcpyDeviceToHost);
 
-    cudaEventSynchronize(stop);
-    cudaEventElapsedTime(&msecTotal, start, stop);
-    printf("my conv cost time: %f\n", msecTotal / (iters - 1));
-    msecPerMatrixMul[1] = msecTotal / (iters - 1);
+    printf("my conv cost time: %f\n", msecTotal / (iters));
+    msecPerMatrixMul[1] = msecTotal / (iters);
     gigaFlops[1] = (flopsPerMatrixMul * 1.0e-9f) / (msecPerMatrixMul[1] / 1000.0f);
     for (int i = 0; i < outC * outH * outW; i++)
     {
@@ -253,9 +253,11 @@ int main()
     cudaFree(dev_input);
     cudaFree(dev_kernel);
     cudaFree(dev_output);
+#ifdef GPU_PARALLEL
     cudaFree(self_dev_input);
     cudaFree(self_dev_kernel);
     cudaFree(self_dev_output);
+#endif
     free(self_outputs);
     free(inputs);
     free(outputs);
